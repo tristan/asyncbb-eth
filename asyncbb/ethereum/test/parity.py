@@ -8,6 +8,8 @@ from testing.common.database import (
 )
 from string import Template
 
+from .faucet import FAUCET_PRIVATE_KEY, FAUCET_ADDRESS
+
 chaintemplate = Template("""{
   "name": "GethTranslation",
   "engine": {
@@ -88,9 +90,6 @@ chaintemplate2 = Template("""{
         "$author": { "balance": "1606938044258990275541962092341162602522202993782792835301376", "nonce": "1048576" }
     }
 }""")
-
-FAUCET_PRIVATE_KEY = "0x0164f7c7399f4bb1eafeaae699ebbb12050bc6a50b2836b9ca766068a9d000c0"
-FAUCET_ADDRESS = "0xde3d2d9dd52ea80f7799ef4791063a5458d13913"
 
 def write_chain_file(fn, author):
 

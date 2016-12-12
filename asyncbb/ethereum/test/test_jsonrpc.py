@@ -22,4 +22,4 @@ class EthTest(AsyncHandlerTest):
     async def test_jsonrpc_connection(self):
 
         resp = await self.fetch('/')
-        self.assertEqual(resp.body, b'100000000000000000000000000000')
+        self.assertEqual(resp.body, b'1606938044258990275541962092341162602522202993782792835301376')

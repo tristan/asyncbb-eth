@@ -17,6 +17,8 @@ setup(
     setup_requires=['pytest-runner'],
     tests_require=[
         'pytest',
+        'ethereum',
+        'rlp==0.4.6',
         'testing.common.database'
     ]
 )
