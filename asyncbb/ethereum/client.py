@@ -129,3 +129,20 @@ class JsonRPCClient:
         result = await self._fetch("eth_getTransactionByHash", [tx])
 
         return result
+
+    async def eth_blockNumber(self):
+
+        result = await self._fetch("eth_blockNumber", [])
+
+        if result.startswith("0x"):
+            result = result[2:]
+
+        return int(result, 16)
+
+    async def eth_getBlockByNumber(self, number):
+
+        number = validate_hex(number)
+
+        result = await self._fetch("eth_getBlockByNumber", [number, True])
+
+        return result
