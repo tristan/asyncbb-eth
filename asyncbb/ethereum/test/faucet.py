@@ -39,7 +39,7 @@ def data_encoder(data, length=None):
 
 class FaucetMixin:
 
-    async def faucet(self, to, value):
+    async def faucet(self, to, value, wait_on_confirmation=True):
 
         ethclient = JsonRPCClient(self._app.config['ethereum']['url'])
 
@@ -61,9 +61,11 @@ class FaucetMixin:
 
         tx_hash = await ethclient.eth_sendRawTransaction(tx_encoded)
 
-        while True:
+        while wait_on_confirmation:
             resp = await ethclient.eth_getTransactionByHash(tx_hash)
             if resp is None or resp['blockNumber'] is None:
                 await asyncio.sleep(0.1)
             else:
                 break
+
+        return tx_hash

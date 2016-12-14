@@ -1,4 +1,6 @@
 import asyncio
+import binascii
+import bitcoin
 import os
 import tornado.httpclient
 import tornado.escape
@@ -6,7 +8,7 @@ import subprocess
 import re
 
 from testing.common.database import (
-    Database, DatabaseFactory, get_path_of
+    Database, DatabaseFactory, get_path_of, get_unused_port
 )
 from string import Template
 
@@ -113,6 +115,11 @@ class ParityServer(Database):
                             parity_server=None,
                             author=FAUCET_ADDRESS,
                             port=None,
+                            rpcport=None,
+                            bootnodes=None,
+                            node_key=None,
+                            no_dapps=False,
+                            dapps_port=None,
                             copy_data_from=None)
 
     subdirectories = ['data', 'tmp']
@@ -134,37 +141,61 @@ class ParityServer(Database):
             raise Exception("Unable to figure out Parity version")
 
         self.version = v
-        self.config = self.settings.get('parity_conf', {})
-        self.config['chainfile'] = os.path.join(self.base_dir, 'chain.json')
+        self.chainfile = os.path.join(self.base_dir, 'chain.json')
         self.author = self.settings.get('author')
 
     def dsn(self, **kwargs):
-        return {'url': "http://localhost:{}/".format(self.config['rpcport'])}
+        return {'node': 'enode://{}@127.0.0.1:{}'.format(self.public_key, self.settings['port']),
+                'url': "http://localhost:{}/".format(self.settings['rpcport'])}
 
     def get_data_directory(self):
         return os.path.join(self.base_dir, 'data')
 
     def prestart(self):
         super(ParityServer, self).prestart()
-        if 'rpcport' not in self.config:
-            self.config['rpcport'] = self.settings['port']
+
+        if self.settings['rpcport'] is None:
+            self.settings['rpcport'] = get_unused_port()
+
+        if self.settings['no_dapps'] is False and self.settings['dapps_port'] is None:
+            self.settings['dapps_port'] = get_unused_port()
+
+        if self.settings['node_key'] is None:
+            self.settings['node_key'] = "{:0>64}".format(binascii.b2a_hex(os.urandom(32)).decode('ascii'))
+
+        self.public_key = "{:0>128}".format(binascii.b2a_hex(bitcoin.privtopub(binascii.a2b_hex(self.settings['node_key']))[1:]).decode('ascii'))
 
         # write chain file
-        write_chain_file(self.version, self.config['chainfile'], self.author)
+        write_chain_file(self.version, self.chainfile, self.author)
 
     def get_server_commandline(self):
         if self.author.startswith("0x"):
             author = self.author[2:]
         else:
             author = self.author
-        return [self.parity_server,
-                "--no-discovery",
-                "--no-ui",
-                "--rpcport", str(self.config['rpcport']),
-                "--datadir", self.get_data_directory(),
-                "--no-color",
-                "--chain", self.config['chainfile'],
-                "--author", author]
+
+        cmd = [self.parity_server,
+               "--no-ui",
+               "--port", str(self.settings['port']),
+               "--rpcport", str(self.settings['rpcport']),
+               "--datadir", self.get_data_directory(),
+               "--no-color",
+               "--chain", self.chainfile,
+               "--author", author,
+               "--node-key", self.settings['node_key']]
+
+        if self.settings['no_dapps']:
+            cmd.extend(['--no-dapps'])
+        else:
+            cmd.extend(['--dapps-port', str(self.settings['dapps_port'])])
+
+        if self.settings['bootnodes'] is not None:
+            if isinstance(self.settings['bootnodes'], list):
+                self.settings['bootnodes'] = ','.join(self.settings['bootnodes'])
+
+            cmd.extend(['--bootnodes', self.settings['bootnodes']])
+
+        return cmd
 
     def is_server_available(self):
         try:

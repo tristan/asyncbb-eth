@@ -146,3 +146,21 @@ class JsonRPCClient:
         result = await self._fetch("eth_getBlockByNumber", [number, True])
 
         return result
+
+    async def eth_newPendingTransactionFilter(self):
+
+        result = await self._fetch("eth_newPendingTransactionFilter", [])
+
+        return result
+
+    async def eth_getFilterChanges(self, filter_id):
+
+        result = await self._fetch("eth_getFilterChanges", [filter_id])
+
+        return result
+
+    async def eth_uninstallFilter(self, filter_id):
+
+        result = await self._fetch("eth_uninstallFilter", [filter_id])
+
+        return result

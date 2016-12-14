@@ -18,7 +18,7 @@ class FaucetTest(FaucetMixin, AsyncHandlerTest):
     def get_urls(self):
         return [(r'^/(0x.+)$', Handler)]
 
-    @gen_test
+    @gen_test(timeout=10)
     @requires_parity
     async def test_jsonrpc_connection(self):
 
