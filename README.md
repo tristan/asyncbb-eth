@@ -30,9 +30,15 @@ class Handler(EthereumMixin, BaseHandler):
 
 # Testing
 
+Writing tests for ethereum requires both `parity` and `ethminer` be installed on your system
+
 ## Installing parity
 
-see https://ethcore.io/parity.html
+https://ethcore.io/parity.html
+
+## Installing ethminer
+
+https://github.com/ethereum/go-ethereum/wiki/Mining#mining-software
 
 ## Example test
 
