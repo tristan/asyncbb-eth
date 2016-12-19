@@ -139,17 +139,24 @@ class JsonRPCClient:
 
         return int(result, 16)
 
-    async def eth_getBlockByNumber(self, number):
+    async def eth_getBlockByNumber(self, number, with_transactions=True):
 
-        number = validate_hex(number)
+        if number not in ["pending", "earliest", "latest"]:
+            number = validate_hex(number)
 
-        result = await self._fetch("eth_getBlockByNumber", [number, True])
+        result = await self._fetch("eth_getBlockByNumber", [number, with_transactions])
 
         return result
 
     async def eth_newPendingTransactionFilter(self):
 
         result = await self._fetch("eth_newPendingTransactionFilter", [])
+
+        return result
+
+    async def eth_newBlockFilter(self):
+
+        result = await self._fetch("eth_newBlockFilter", [])
 
         return result
 
