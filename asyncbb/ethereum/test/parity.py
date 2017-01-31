@@ -16,6 +16,7 @@ from .faucet import FAUCET_PRIVATE_KEY, FAUCET_ADDRESS
 
 from .ethminer import EthMiner
 
+# https://github.com/ethcore/parity/wiki/Chain-specification
 chaintemplate = Template("""{
     "name": "Dev",
     "engine": {
@@ -188,7 +189,7 @@ class ParityServer(Database):
 class ParityServerFactory(DatabaseFactory):
     target_class = ParityServer
 
-def requires_parity(func=None, difficulty=None):
+def requires_parity(func=None, difficulty=None, pass_args=False):
     """Used to ensure all database connections are returned to the pool
     before finishing the test"""
 
@@ -200,6 +201,10 @@ def requires_parity(func=None, difficulty=None):
             ethminer = EthMiner(jsonrpc_url=parity.dsn()['url'])
 
             self._app.config['ethereum'] = parity.dsn()
+
+            if pass_args:
+                kwargs['parity'] = parity
+                kwargs['ethminer'] = ethminer
 
             f = fn(self, *args, **kwargs)
             if asyncio.iscoroutine(f):

@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 
 from testing.common.database import (
@@ -57,6 +58,10 @@ class EthMiner(Database):
                 raise
         finally:
             logger.close()
+
+    def pause(self):
+        """stops ethminer, without calling the cleanup"""
+        self.terminate(signal.SIGTERM)
 
     def get_server_commandline(self):
         return [self.ethminer,
