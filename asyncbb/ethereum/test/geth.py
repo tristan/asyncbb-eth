@@ -20,7 +20,7 @@ chaintemplate = Template("""{
     "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "extraData": "0x0",
     "gasLimit": "0x8000000",
-    "difficulty": "0x400",
+    "difficulty": "$difficulty",
     "mixhash": "0x0000000000000000000000000000000000000000000000000000000000000000",
     "coinbase": "0x3333333333333333333333333333333333333333",
     "alloc": {
@@ -31,13 +31,19 @@ chaintemplate = Template("""{
 }
 """)
 
-def write_chain_file(version, fn, author):
+def write_chain_file(version, fn, author, difficulty):
 
     if author.startswith('0x'):
         author = author[2:]
 
+    if isinstance(difficulty, int):
+        difficulty = hex(difficulty)
+    elif isinstance(difficulty, str):
+        if not difficulty.startswith("0x"):
+            difficulty = "0x{}".format(difficulty)
+
     with open(fn, 'w') as f:
-        f.write(chaintemplate.substitute(author=author))
+        f.write(chaintemplate.substitute(author=author, difficulty=difficulty))
 
 class GethServer(Database):
 
@@ -51,6 +57,7 @@ class GethServer(Database):
                             node_key=None,
                             no_dapps=False,
                             dapps_port=None,
+                            difficulty=None,
                             copy_data_from=None)
 
     subdirectories = ['data', 'tmp']
@@ -59,6 +66,10 @@ class GethServer(Database):
         self.geth_server = self.settings.get('geth_server')
         if self.geth_server is None:
             self.geth_server = get_path_of('geth')
+
+        self.difficulty = self.settings.get('difficulty')
+        if self.difficulty is None:
+            self.difficulty = 1024
 
         p = subprocess.Popen([self.geth_server, 'version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         outs, errs = p.communicate(timeout=15)
@@ -101,7 +112,7 @@ class GethServer(Database):
         self.public_key = "{:0>128}".format(binascii.b2a_hex(bitcoin.privtopub(binascii.a2b_hex(self.settings['node_key']))[1:]).decode('ascii'))
 
         # write chain file
-        write_chain_file(self.version, self.chainfile, self.author)
+        write_chain_file(self.version, self.chainfile, self.author, self.difficulty)
 
         p = subprocess.Popen([self.geth_server, '--datadir', self.get_data_directory(), 'init', self.chainfile], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         outs, errs = p.communicate(timeout=15)
@@ -149,7 +160,7 @@ class GethServer(Database):
 class GethServerFactory(DatabaseFactory):
     target_class = GethServer
 
-def requires_geth(func=None):
+def requires_geth(func=None, difficulty=None):
     """Used to ensure all database connections are returned to the pool
     before finishing the test"""
 
@@ -157,7 +168,7 @@ def requires_geth(func=None):
 
         async def wrapper(self, *args, **kwargs):
 
-            geth = GethServer()
+            geth = GethServer(difficulty=difficulty)
 
             self._app.config['ethereum'] = geth.dsn()
 

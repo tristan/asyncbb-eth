@@ -16,48 +16,13 @@ from .faucet import FAUCET_PRIVATE_KEY, FAUCET_ADDRESS
 
 from .ethminer import EthMiner
 
-instantseal_chaintemplate = Template("""{
-    "name": "Development",
-    "engine": {
-        "InstantSeal": null
-    },
-    "params": {
-        "accountStartNonce": "0x0100000",
-        "maximumExtraDataSize": "0x20",
-        "minGasLimit": "0x1388",
-        "networkID" : "0x2"
-    },
-    "genesis": {
-        "seal": {
-            "generic": {
-                "fields": 0,
-                "rlp": "0x0"
-            }
-        },
-        "difficulty": "0x20000",
-        "author": "0x0000000000000000000000000000000000000000",
-        "timestamp": "0x00",
-        "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-        "extraData": "0x",
-        "gasLimit": "0x2fefd8"
-    },
-    "accounts": {
-        "0000000000000000000000000000000000000001": { "balance": "1", "nonce": "1048576", "builtin": { "name": "ecrecover", "pricing": { "linear": { "base": 3000, "word": 0 } } } },
-        "0000000000000000000000000000000000000002": { "balance": "1", "nonce": "1048576", "builtin": { "name": "sha256", "pricing": { "linear": { "base": 60, "word": 12 } } } },
-        "0000000000000000000000000000000000000003": { "balance": "1", "nonce": "1048576", "builtin": { "name": "ripemd160", "pricing": { "linear": { "base": 600, "word": 120 } } } },
-        "0000000000000000000000000000000000000004": { "balance": "1", "nonce": "1048576", "builtin": { "name": "identity", "pricing": { "linear": { "base": 15, "word": 3 } } } },
-        "$author": { "balance": "1606938044258990275541962092341162602522202993782792835301376", "nonce": "1048576" }
-    }
-}""")
-
-
-mining_chaintemplate = Template("""{
+chaintemplate = Template("""{
     "name": "Dev",
     "engine": {
         "Ethash": {
             "params": {
                 "gasLimitBoundDivisor": "0x0400",
-                "minimumDifficulty": "0x020000",
+                "minimumDifficulty": "$difficulty",
                 "difficultyBoundDivisor": "0x0800",
                 "durationLimit": "0x0a",
                 "blockReward": "0x4563918244F40000",
@@ -79,7 +44,7 @@ mining_chaintemplate = Template("""{
                 "mixHash": "0x00000000000000000000000000000000000000647572616c65787365646c6578"
             }
         },
-        "difficulty": "0x20000",
+        "difficulty": "$difficulty",
         "author": "0x0000000000000000000000000000000000000000",
         "timestamp": "0x00",
         "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
@@ -95,18 +60,19 @@ mining_chaintemplate = Template("""{
     }
 }""")
 
-def write_chain_file(version, fn, author):
+def write_chain_file(version, fn, author, difficulty):
 
     if author.startswith('0x'):
         author = author[2:]
 
-    if version < (1, 5, ):
-        chaintemplate = mining_chaintemplate
-    else:
-        chaintemplate = instantseal_chaintemplate
+    if isinstance(difficulty, int):
+        difficulty = hex(difficulty)
+    elif isinstance(difficulty, str):
+        if not difficulty.startswith("0x"):
+            difficulty = "0x{}".format(difficulty)
 
     with open(fn, 'w') as f:
-        f.write(chaintemplate.substitute(author=author))
+        f.write(chaintemplate.substitute(author=author, difficulty=difficulty))
 
 class ParityServer(Database):
 
@@ -120,6 +86,7 @@ class ParityServer(Database):
                             node_key=None,
                             no_dapps=False,
                             dapps_port=None,
+                            difficulty=None,
                             copy_data_from=None)
 
     subdirectories = ['data', 'tmp']
@@ -144,6 +111,10 @@ class ParityServer(Database):
         self.chainfile = os.path.join(self.base_dir, 'chain.json')
         self.author = self.settings.get('author')
 
+        self.difficulty = self.settings.get('difficulty')
+        if self.difficulty is None:
+            self.difficulty = 1024
+
     def dsn(self, **kwargs):
         return {'node': 'enode://{}@127.0.0.1:{}'.format(self.public_key, self.settings['port']),
                 'url': "http://localhost:{}/".format(self.settings['rpcport'])}
@@ -166,7 +137,7 @@ class ParityServer(Database):
         self.public_key = "{:0>128}".format(binascii.b2a_hex(bitcoin.privtopub(binascii.a2b_hex(self.settings['node_key']))[1:]).decode('ascii'))
 
         # write chain file
-        write_chain_file(self.version, self.chainfile, self.author)
+        write_chain_file(self.version, self.chainfile, self.author, self.difficulty)
 
     def get_server_commandline(self):
         if self.author.startswith("0x"):
@@ -217,7 +188,7 @@ class ParityServer(Database):
 class ParityServerFactory(DatabaseFactory):
     target_class = ParityServer
 
-def requires_parity(func=None):
+def requires_parity(func=None, difficulty=None):
     """Used to ensure all database connections are returned to the pool
     before finishing the test"""
 
@@ -225,9 +196,8 @@ def requires_parity(func=None):
 
         async def wrapper(self, *args, **kwargs):
 
-            parity = ParityServer()
-            if parity.version < (1, 5, ):
-                ethminer = EthMiner(jsonrpc_url=parity.dsn()['url'])
+            parity = ParityServer(difficulty=difficulty)
+            ethminer = EthMiner(jsonrpc_url=parity.dsn()['url'])
 
             self._app.config['ethereum'] = parity.dsn()
 
@@ -235,8 +205,7 @@ def requires_parity(func=None):
             if asyncio.iscoroutine(f):
                 await f
 
-            if parity.version < (1, 5, ):
-                ethminer.stop()
+            ethminer.stop()
             parity.stop()
 
         return wrapper
