@@ -2,10 +2,14 @@ import asyncio
 import binascii
 import bitcoin
 import os
+import functools
 import tornado.httpclient
 import tornado.escape
 import subprocess
+import socket
 import re
+
+from tornado.websocket import websocket_connect
 
 from testing.common.database import (
     Database, DatabaseFactory, get_path_of, get_unused_port
@@ -57,6 +61,7 @@ class GethServer(Database):
                             node_key=None,
                             no_dapps=False,
                             dapps_port=None,
+                            ws=None,
                             difficulty=None,
                             copy_data_from=None)
 
@@ -87,8 +92,13 @@ class GethServer(Database):
         self.author = self.settings.get('author')
 
     def dsn(self, **kwargs):
-        return {'node': 'enode://{}@127.0.0.1:{}'.format(self.public_key, self.settings['port']),
-                'url': "http://localhost:{}/".format(self.settings['rpcport'])}
+        dsn = {
+            'node': 'enode://{}@127.0.0.1:{}'.format(self.public_key, self.settings['port']),
+            'url': "http://localhost:{}/".format(self.settings['rpcport'])
+        }
+        if self.settings['ws'] is not None:
+            dsn['ws'] = 'ws://localhost:{}'.format(self.settings['wsport'])
+        return dsn
 
     def get_data_directory(self):
         return os.path.join(self.base_dir, 'data')
@@ -108,6 +118,9 @@ class GethServer(Database):
 
         if self.settings['node_key'] is None:
             self.settings['node_key'] = "{:0>64}".format(binascii.b2a_hex(os.urandom(32)).decode('ascii'))
+
+        if self.settings['ws'] is not None:
+            self.settings['wsport'] = get_unused_port()
 
         self.public_key = "{:0>128}".format(binascii.b2a_hex(bitcoin.privtopub(binascii.a2b_hex(self.settings['node_key']))[1:]).decode('ascii'))
 
@@ -129,8 +142,11 @@ class GethServer(Database):
                "--rpcport", str(self.settings['rpcport']),
                "--datadir", self.get_data_directory(),
                "--etherbase", author,
-               "--mine",
+               "--mine", "--nat", "none", "--verbosity", "6",
                "--nodekeyhex", self.settings['node_key']]
+
+        if self.settings['ws'] is not None:
+            cmd.extend(['--ws', '--wsport', str(self.settings['wsport']), '--wsorigins', '*'])
 
         if self.settings['bootnodes'] is not None:
             if isinstance(self.settings['bootnodes'], list):
@@ -142,25 +158,32 @@ class GethServer(Database):
 
     def is_server_available(self):
         try:
-            tornado.httpclient.HTTPClient().fetch(
-                self.dsn()['url'],
-                method="POST",
-                headers={'Content-Type': "application/json"},
-                body=tornado.escape.json_encode({
-                    "jsonrpc": "2.0",
-                    "id": "1234",
-                    "method": "POST",
-                    "params": ["0x{}".format(self.author), "latest"]
-                })
-            )
+            if self.settings['ws'] is not None:
+                ioloop = tornado.ioloop.IOLoop(make_current=False)
+                ioloop.run_sync(functools.partial(
+                    geth_websocket_connect, self.dsn()['ws']))
+            else:
+                tornado.httpclient.HTTPClient().fetch(
+                    self.dsn()['url'],
+                    method="POST",
+                    headers={'Content-Type': "application/json"},
+                    body=tornado.escape.json_encode({
+                        "jsonrpc": "2.0",
+                        "id": "1234",
+                        "method": "POST",
+                        "params": ["0x{}".format(self.author), "latest"]
+                    })
+                )
             return True
-        except (tornado.httpclient.HTTPError, ConnectionRefusedError):
+        except (tornado.httpclient.HTTPError,) as e:
+            return False
+        except (ConnectionRefusedError,) as e:
             return False
 
 class GethServerFactory(DatabaseFactory):
     target_class = GethServer
 
-def requires_geth(func=None, difficulty=None):
+def requires_geth(func=None, pass_server=False, **server_kwargs):
     """Used to ensure all database connections are returned to the pool
     before finishing the test"""
 
@@ -168,9 +191,12 @@ def requires_geth(func=None, difficulty=None):
 
         async def wrapper(self, *args, **kwargs):
 
-            geth = GethServer(difficulty=difficulty)
+            geth = GethServer(**server_kwargs)
 
             self._app.config['ethereum'] = geth.dsn()
+
+            if pass_server:
+                kwargs['geth'] = geth
 
             f = fn(self, *args, **kwargs)
             if asyncio.iscoroutine(f):
@@ -184,3 +210,17 @@ def requires_geth(func=None, difficulty=None):
         return wrap(func)
     else:
         return wrap
+
+def geth_websocket_connect(url, io_loop=None, callback=None, connect_timeout=None,
+                           on_message_callback=None, compression_options=None):
+    """Helper function for connecting to geth via websockets, which may need the
+    origin set should there be no --wsorigin * option set in geth's config"""
+
+    if not isinstance(url, tornado.httpclient.HTTPRequest):
+        if url.startswith('wss://'):
+            origin = 'https://{}'.format(socket.gethostname())
+        else:
+            origin = 'http://{}'.format(socket.gethostname())
+        url = tornado.httpclient.HTTPRequest(url, headers={'Origin': origin})
+    return websocket_connect(url, io_loop=io_loop, callback=callback, connect_timeout=connect_timeout,
+                             on_message_callback=on_message_callback, compression_options=compression_options)
