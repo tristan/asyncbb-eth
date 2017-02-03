@@ -3,6 +3,8 @@ import random
 import regex
 import tornado.httpclient
 
+from asyncbb.jsonrpc import JsonRPCError
+
 JSON_RPC_VERSION = "2.0"
 
 HEX_RE = regex.compile("(0x)?([0-9a-fA-F]+)")
@@ -17,16 +19,6 @@ def validate_hex(value):
     if m:
         return "0x{}".format(m.group(2))
     raise ValueError("Unable to convert value to valid hex string")
-
-class JsonRPCError(Exception):
-    def __init__(self, code, message):
-        super(JsonRPCError, self).__init__(message)
-        self.code = code
-        self.message = message
-
-    def __repr__(self):
-
-        return "Error ({}): {}".format(self.code, self.message)
 
 class JsonRPCClient:
 
@@ -68,7 +60,7 @@ class JsonRPCClient:
         if "error" in rval:
 
             print(rval)
-            raise JsonRPCError(rval['error']['code'], rval['error']['message'])
+            raise JsonRPCError(rval['id'], rval['error']['code'], rval['error']['message'], rval['error']['data'] if 'data' in rval['error'] else None)
 
         return rval['result']
 
