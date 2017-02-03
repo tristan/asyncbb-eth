@@ -198,11 +198,12 @@ def requires_geth(func=None, pass_server=False, **server_kwargs):
             if pass_server:
                 kwargs['geth'] = geth
 
-            f = fn(self, *args, **kwargs)
-            if asyncio.iscoroutine(f):
-                await f
-
-            geth.stop()
+            try:
+                f = fn(self, *args, **kwargs)
+                if asyncio.iscoroutine(f):
+                    await f
+            finally:
+                geth.stop()
 
         return wrapper
 

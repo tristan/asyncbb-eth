@@ -189,7 +189,7 @@ class ParityServer(Database):
 class ParityServerFactory(DatabaseFactory):
     target_class = ParityServer
 
-def requires_parity(func=None, difficulty=None, pass_args=False):
+def requires_parity(func=None, difficulty=None, pass_args=False, pass_parity=False, pass_ethminer=False):
     """Used to ensure all database connections are returned to the pool
     before finishing the test"""
 
@@ -205,13 +205,24 @@ def requires_parity(func=None, difficulty=None, pass_args=False):
             if pass_args:
                 kwargs['parity'] = parity
                 kwargs['ethminer'] = ethminer
+            if pass_ethminer:
+                if pass_ethminer is True:
+                    kwargs['ethminer'] = ethminer
+                else:
+                    kwargs[pass_ethminer] = ethminer
+            if pass_parity:
+                if pass_parity is True:
+                    kwargs['parity'] = parity
+                else:
+                    kwargs[pass_parity] = parity
 
-            f = fn(self, *args, **kwargs)
-            if asyncio.iscoroutine(f):
-                await f
-
-            ethminer.stop()
-            parity.stop()
+            try:
+                f = fn(self, *args, **kwargs)
+                if asyncio.iscoroutine(f):
+                    await f
+            finally:
+                ethminer.stop()
+                parity.stop()
 
         return wrapper
 
