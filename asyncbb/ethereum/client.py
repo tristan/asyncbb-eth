@@ -20,6 +20,12 @@ def validate_hex(value):
         return "0x{}".format(m.group(2))
     raise ValueError("Unable to convert value to valid hex string")
 
+def validate_block_param(param):
+
+    if param not in ("earliest", "latest", "pending"):
+        return validate_hex(param)
+    return param
+
 class JsonRPCClient:
 
     def __init__(self, url):
@@ -64,21 +70,24 @@ class JsonRPCClient:
 
         return rval['result']
 
-    async def eth_getBalance(self, address):
+    async def eth_getBalance(self, address, block="latest"):
 
         address = validate_hex(address)
-        result = await self._fetch("eth_getBalance", [address, "latest"])
+        block = validate_block_param(block)
+
+        result = await self._fetch("eth_getBalance", [address, block])
 
         if result.startswith("0x"):
             result = result[2:]
 
         return int(result, 16)
 
-    async def eth_getTransactionCount(self, address):
+    async def eth_getTransactionCount(self, address, block="latest"):
 
         address = validate_hex(address)
+        block = validate_block_param(block)
 
-        result = await self._fetch("eth_getTransactionCount", [address, "latest"])
+        result = await self._fetch("eth_getTransactionCount", [address, block])
 
         if result.startswith("0x"):
             result = result[2:]
@@ -133,8 +142,7 @@ class JsonRPCClient:
 
     async def eth_getBlockByNumber(self, number, with_transactions=True):
 
-        if number not in ["pending", "earliest", "latest"]:
-            number = validate_hex(number)
+        number = validate_block_param(number)
 
         result = await self._fetch("eth_getBlockByNumber", [number, with_transactions])
 
@@ -162,4 +170,32 @@ class JsonRPCClient:
 
         result = await self._fetch("eth_uninstallFilter", [filter_id])
 
+        return result
+
+    async def eth_getCode(self, address, block="latest"):
+
+        address = validate_hex(address)
+        block = validate_block_param(block)
+        result = await self._fetch("eth_getCode", [address, block])
+
+        return result
+
+    async def eth_call(self, *, to_address, from_address=None, gas=None, gasprice=None, value=None, data=None, block="latest"):
+
+        to_address = validate_hex(to_address)
+        block = validate_block_param(block)
+
+        callobj = {"to": to_address}
+        if from_address:
+            callobj['from'] = validate_hex(from_address)
+        if gas:
+            callobj['gas'] = validate_hex(gas)
+        if gasprice:
+            callobj['gasprice'] = validate_hex(gasprice)
+        if value:
+            callobj['value'] = validate_hex(value)
+        if data:
+            callobj['data'] = validate_hex(data)
+
+        result = await self._fetch("eth_call", [callobj, block])
         return result

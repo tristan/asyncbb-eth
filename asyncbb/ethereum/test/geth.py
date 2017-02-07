@@ -130,6 +130,9 @@ class GethServer(Database):
         p = subprocess.Popen([self.geth_server, '--datadir', self.get_data_directory(), 'init', self.chainfile], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         outs, errs = p.communicate(timeout=15)
 
+        with open(os.path.join(self.get_data_directory(), 'keystore', 'UTC--2017-02-06T16-16-34.720321115Z--de3d2d9dd52ea80f7799ef4791063a5458d13913'), 'w') as inf:
+            inf.write('''{"address":"de3d2d9dd52ea80f7799ef4791063a5458d13913","crypto":{"cipher":"aes-128-ctr","ciphertext":"8d6528acfb366722d9c98f64435bb151f5671f9e4623e546cc7206382a1d54f7","cipherparams":{"iv":"de95c854face9aa50686370cc47d6025"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"6baa74518f9cc34575c981e027154e9c714b400710478c587043c900a37a89b8"},"mac":"37b6d35ea394b129f07e9a90a09b8cc1356d731590201e84405f4592013b4333"},"id":"ce658bd4-6910-4eef-aa39-b32000c38ccc","version":3}''')
+
     def get_server_commandline(self):
         if self.author.startswith("0x"):
             author = self.author[2:]
@@ -140,6 +143,7 @@ class GethServer(Database):
                "--port", str(self.settings['port']),
                "--rpc",
                "--rpcport", str(self.settings['rpcport']),
+               "--rpcapi", "eth,web3,personal",
                "--datadir", self.get_data_directory(),
                "--etherbase", author,
                "--mine", "--nat", "none", "--verbosity", "6",
@@ -196,7 +200,10 @@ def requires_geth(func=None, pass_server=False, **server_kwargs):
             self._app.config['ethereum'] = geth.dsn()
 
             if pass_server:
-                kwargs['geth'] = geth
+                if isinstance(pass_server, str):
+                    kwargs[pass_server] = geth
+                else:
+                    kwargs['geth'] = geth
 
             try:
                 f = fn(self, *args, **kwargs)
