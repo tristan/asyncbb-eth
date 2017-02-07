@@ -39,7 +39,7 @@ def data_encoder(data, length=None):
 
 class FaucetMixin:
 
-    async def faucet(self, to, value, wait_on_confirmation=True):
+    async def faucet(self, to, value, *, startgas=DEFAULT_STARTGAS, gasprice=DEFAULT_GASPRICE, data=b"", wait_on_confirmation=True):
 
         ethclient = JsonRPCClient(self._app.config['ethereum']['url'])
 
@@ -50,7 +50,7 @@ class FaucetMixin:
         nonce = await ethclient.eth_getTransactionCount(FAUCET_ADDRESS)
         balance = await ethclient.eth_getBalance(FAUCET_ADDRESS)
 
-        tx = Transaction(nonce, DEFAULT_GASPRICE, DEFAULT_STARTGAS, to, value, b"", 0, 0, 0)
+        tx = Transaction(nonce, gasprice, startgas, to, value, data, 0, 0, 0)
 
         if balance < (tx.value + (tx.startgas * tx.gasprice)):
             raise Exception("Faucet doesn't have enough funds")

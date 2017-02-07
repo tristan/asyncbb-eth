@@ -88,16 +88,16 @@ class JsonRPCClient:
     async def eth_estimateGas(self, source_address, target_address, **kwargs):
 
         source_address = validate_hex(source_address)
-        target_address = validate_hex(target_address)
+        hexkwargs = {"from": source_address}
 
-        hexkwargs = {}
+        if target_address != '':
+            target_address = validate_hex(target_address)
+            hexkwargs["to"] = target_address
+
         for k, value in kwargs.items():
             hexkwargs[k] = validate_hex(value)
 
-        result = await self._fetch("eth_estimateGas", [{
-            "from": source_address, "to": target_address,
-            **hexkwargs
-        }])
+        result = await self._fetch("eth_estimateGas", [hexkwargs])
 
         return int(result, 16)
 
