@@ -12,7 +12,9 @@ setup(
     install_requires=[
         'regex',
         'asyncbb',
-        'ethutils'
+        'ethutils',
+        'ethereum',
+        'rlp==0.4.6'
     ],
     dependency_links=[
         'http://github.com/tristan/asyncbb/tarball/master#egg=asyncbb',
@@ -21,8 +23,6 @@ setup(
     setup_requires=['pytest-runner'],
     tests_require=[
         'pytest',
-        'ethereum',
-        'rlp==0.4.6',
         'testing.common.database'
     ]
 )

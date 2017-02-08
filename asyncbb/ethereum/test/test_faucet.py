@@ -65,14 +65,19 @@ class ContractTest(FaucetMixin, AsyncHandlerTest):
 
         client = JsonRPCClient(node.dsn()['url'])
 
-        source_fn = os.path.join(node.get_data_directory(), 'greeting.sol')
-        with open(source_fn, 'w') as wf:
-            wf.write("contract greeter{string greeting;function greeter(string _greeting) public{greeting=_greeting;}function greet() constant returns (string){return greeting;}}\n")
+        sourcecode = b"contract greeter{string greeting;function greeter(string _greeting) public{greeting=_greeting;}function greet() constant returns (string){return greeting;}}"
+        #source_fn = os.path.join(node.get_data_directory(), 'greeting.sol')
+        #with open(source_fn, 'wb') as wf:
+        #    wf.write(sourcecode)
+        source_fn = '<stdin>'
 
         contract_name = 'greeter'
         constructor_args = [b'hello world!']
 
-        output = subprocess.check_output(['solc', '--combined-json', 'bin,abi', '--add-std', source_fn], stderr=subprocess.PIPE)
+        args = ['solc', '--combined-json', 'bin,abi', '--add-std'] # , source_fn]
+        #output = subprocess.check_output(args, stderr=subprocess.PIPE)
+        process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        output, stderrdata = process.communicate(input=sourcecode)
         output = json_decode(output)
 
         contract = output['contracts']['{}:{}'.format(source_fn, contract_name)]

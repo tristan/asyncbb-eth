@@ -103,6 +103,8 @@ class JsonRPCClient:
             hexkwargs["to"] = target_address
 
         for k, value in kwargs.items():
+            if k == 'gasprice' or k == 'gas_price':
+                k = 'gasPrice'
             hexkwargs[k] = validate_hex(value)
 
         result = await self._fetch("eth_estimateGas", [hexkwargs])
@@ -144,6 +146,24 @@ class JsonRPCClient:
         number = validate_block_param(number)
 
         result = await self._fetch("eth_getBlockByNumber", [number, with_transactions])
+
+        return result
+
+    async def eth_newFilter(self, *, fromBlock=None, toBlock=None, address=None, topics=None):
+
+        kwargs = {}
+        if fromBlock:
+            kwargs['fromBlock'] = validate_hex(fromBlock)
+        if toBlock:
+            kwargs['toBlock'] = validate_hex(toBlock)
+        if address:
+            kwargs['address'] = validate_hex(address)
+        if topics:
+            if not isinstance(topics, list):
+                raise TypeError("topics must be an array of DATA")
+            kwargs['topics'] = [validate_hex(i) for i in topics]
+
+        result = await self._fetch("eth_newFilter", [kwargs])
 
         return result
 
@@ -190,7 +210,7 @@ class JsonRPCClient:
         if gas:
             callobj['gas'] = validate_hex(gas)
         if gasprice:
-            callobj['gasprice'] = validate_hex(gasprice)
+            callobj['gasPrice'] = validate_hex(gasprice)
         if value:
             callobj['value'] = validate_hex(value)
         if data:
