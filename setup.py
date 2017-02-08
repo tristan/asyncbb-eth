@@ -11,9 +11,13 @@ setup(
     long_description=open('README.md').read(),
     install_requires=[
         'regex',
-        'asyncbb'
+        'asyncbb',
+        'ethutils'
     ],
-    dependency_links=['http://github.com/tristan/asyncbb/tarball/master#egg=asyncbb'],
+    dependency_links=[
+        'http://github.com/tristan/asyncbb/tarball/master#egg=asyncbb',
+        'http://github.com/tristan/ethutils/tarball/master#egg=ethutils'
+    ],
     setup_requires=['pytest-runner'],
     tests_require=[
         'pytest',

@@ -65,7 +65,6 @@ class JsonRPCClient:
 
         if "error" in rval:
 
-            print(rval)
             raise JsonRPCError(rval['id'], rval['error']['code'], rval['error']['message'], rval['error']['data'] if 'data' in rval['error'] else None)
 
         return rval['result']

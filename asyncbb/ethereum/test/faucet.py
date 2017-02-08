@@ -1,56 +1,14 @@
 import asyncio
 import rlp
-import bitcoin
-from ethereum import utils
 from ethereum.transactions import Transaction
 from asyncbb.ethereum.client import JsonRPCClient
+from ethutils import data_decoder, data_encoder, private_key_to_address
 
 FAUCET_PRIVATE_KEY = "0x0164f7c7399f4bb1eafeaae699ebbb12050bc6a50b2836b9ca766068a9d000c0"
 FAUCET_ADDRESS = "0xde3d2d9dd52ea80f7799ef4791063a5458d13913"
 
 DEFAULT_STARTGAS = 21000
 DEFAULT_GASPRICE = 20000000000
-
-def data_decoder(data):
-    """Decode `data` representing unformatted data."""
-    if not data.startswith('0x'):
-        data = '0x' + data
-
-    if len(data) % 2 != 0:
-        # workaround for missing leading zeros from netstats
-        assert len(data) < 64 + 2
-        data = '0x' + '0' * (64 - (len(data) - 2)) + data[2:]
-
-    try:
-        return utils.decode_hex(data[2:])
-    except TypeError:
-        raise Exception('Invalid data hex encoding', data[2:])
-
-def data_encoder(data, length=None):
-    """Encode unformatted binary `data`.
-
-    If `length` is given, the result will be padded like this: ``data_encoder('\xff', 3) ==
-    '0x0000ff'``.
-    """
-    s = utils.encode_hex(data).decode('ascii')
-    if length is None:
-        return '0x' + s
-    else:
-        return '0x' + s.rjust(length * 2, '0')
-
-def private_key_to_address(private_key):
-    """Extracts the address from the given private key, returning the
-    hex representation of the address"""
-
-    if isinstance(private_key, str):
-        private_key = data_decoder(private_key)
-
-    bcpub = bitcoin.privtopub(private_key)
-    # remove prefix (https://en.bitcoin.it/wiki/Elliptic_Curve_Digital_Signature_Algorithm)
-    pub_key = bcpub[1:]
-    # generate address from key
-    addr = utils.sha3(pub_key)[12:]
-    return data_encoder(addr)
 
 class FaucetMixin:
 
