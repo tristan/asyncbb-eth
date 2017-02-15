@@ -218,3 +218,50 @@ class JsonRPCClient:
 
         result = await self._fetch("eth_call", [callobj, block])
         return result
+
+    async def trace_transaction(self, transaction_hash):
+
+        result = await self._fetch("trace_transaction", [transaction_hash])
+
+        return result
+
+    async def trace_get(self, transaction_hash, *positions):
+
+        result = await self._fetch("trace_get", [transaction_hash, positions])
+        return result
+
+    async def trace_replayTransaction(self, transaction_hash, *, vmTrace=False, trace=True, stateDiff=False):
+
+        trace_type = []
+        if vmTrace:
+            trace_type.append('vmTrace')
+        if trace:
+            trace_type.append('trace')
+        if stateDiff:
+            trace_type.append('stateDiff')
+
+        result = await self._fetch("trace_replayTransaction", [transaction_hash, trace_type])
+
+        return result
+
+    async def debug_traceTransaction(self, transaction_hash, *, disableStorage=None, disableMemory=None, disableStack=None,
+                                     fullStorage=None, tracer=None, timeout=None):
+        kwargs = {}
+        if disableStorage is not None:
+            kwargs['disableStorage'] = disableStorage
+        if disableMemory is not None:
+            kwargs['disableMemory'] = disableMemory
+        if disableStack is not None:
+            kwargs['disableStack'] = disableStack
+        if tracer is not None:
+            kwargs['tracer'] = tracer
+        if timeout is not None:
+            kwargs['timeout'] = str(timeout)
+
+        result = await self._fetch("debug_traceTransaction", [transaction_hash, kwargs])
+        return result
+
+    async def web3_clientVersion(self):
+
+        result = await self._fetch("web3_clientVersion", [])
+        return result

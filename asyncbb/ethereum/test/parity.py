@@ -157,6 +157,7 @@ class ParityServer(Database):
                "--no-color",
                "--chain", self.chainfile,
                "--author", author,
+               "--tracing", 'on',
                "--node-key", self.settings['node_key']]
 
         if self.settings['no_dapps']:

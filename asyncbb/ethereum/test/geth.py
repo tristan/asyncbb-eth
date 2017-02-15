@@ -143,7 +143,7 @@ class GethServer(Database):
                "--port", str(self.settings['port']),
                "--rpc",
                "--rpcport", str(self.settings['rpcport']),
-               "--rpcapi", "eth,web3,personal",
+               "--rpcapi", "eth,web3,personal,debug,admin,miner",
                "--datadir", self.get_data_directory(),
                "--etherbase", author,
                "--mine", "--nat", "none", "--verbosity", "6",
