@@ -9,16 +9,22 @@ JSON_RPC_VERSION = "2.0"
 
 HEX_RE = regex.compile("(0x)?([0-9a-fA-F]+)")
 
-def validate_hex(value):
+def validate_hex(value, length=None):
     if isinstance(value, int):
-        return hex(value)
+        value = hex(value)[2:]
     if isinstance(value, bytes):
-        return "0x{}".format(binascii.b2a_hex(value).decode('ascii'))
-    # else assume string
-    m = HEX_RE.match(value)
-    if m:
-        return "0x{}".format(m.group(2))
-    raise ValueError("Unable to convert value to valid hex string")
+        value = binascii.b2a_hex(value).decode('ascii')
+    else:
+        m = HEX_RE.match(value)
+        if m:
+            value = m.group(2)
+        else:
+            raise ValueError("Unable to convert value to valid hex string")
+    if length:
+        if len(value) > length * 2:
+            raise ValueError("Value is too long")
+        return '0x' + value.rjust(length * 2, '0')
+    return '0x' + value
 
 def validate_block_param(param):
 
@@ -153,15 +159,15 @@ class JsonRPCClient:
 
         kwargs = {}
         if fromBlock:
-            kwargs['fromBlock'] = validate_hex(fromBlock)
+            kwargs['fromBlock'] = validate_block_param(fromBlock)
         if toBlock:
-            kwargs['toBlock'] = validate_hex(toBlock)
+            kwargs['toBlock'] = validate_block_param(toBlock)
         if address:
             kwargs['address'] = validate_hex(address)
         if topics:
             if not isinstance(topics, list):
                 raise TypeError("topics must be an array of DATA")
-            kwargs['topics'] = [validate_hex(i) for i in topics]
+            kwargs['topics'] = [None if i is None else validate_hex(i, 32) for i in topics]
 
         result = await self._fetch("eth_newFilter", [kwargs])
 
@@ -182,6 +188,12 @@ class JsonRPCClient:
     async def eth_getFilterChanges(self, filter_id):
 
         result = await self._fetch("eth_getFilterChanges", [filter_id])
+
+        return result
+
+    async def eth_getFilterLogs(self, filter_id):
+
+        result = await self._fetch("eth_getFilterLogs", [filter_id])
 
         return result
 
