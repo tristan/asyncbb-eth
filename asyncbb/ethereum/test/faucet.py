@@ -12,7 +12,7 @@ DEFAULT_GASPRICE = 20000000000
 
 class FaucetMixin:
 
-    async def faucet(self, to, value, *, from_private_key=FAUCET_PRIVATE_KEY, startgas=DEFAULT_STARTGAS,
+    async def faucet(self, to, value, *, from_private_key=FAUCET_PRIVATE_KEY, startgas=None,
                      gasprice=DEFAULT_GASPRICE, nonce=None, data=b"", wait_on_confirmation=True):
 
         if isinstance(from_private_key, str):
@@ -28,6 +28,9 @@ class FaucetMixin:
         if nonce is None:
             nonce = await ethclient.eth_getTransactionCount(from_address)
         balance = await ethclient.eth_getBalance(from_address)
+
+        if startgas is None:
+            startgas = await ethclient.eth_estimateGas(from_address, to, data=data, nonce=nonce, value=value, gasprice=gasprice)
 
         tx = Transaction(nonce, gasprice, startgas, to, value, data, 0, 0, 0)
 
