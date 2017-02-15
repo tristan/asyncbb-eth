@@ -57,14 +57,14 @@ chaintemplate = Template("""{
         "0000000000000000000000000000000000000002": { "balance": "1", "nonce": "1048576", "builtin": { "name": "sha256", "pricing": { "linear": { "base": 60, "word": 12 } } } },
         "0000000000000000000000000000000000000003": { "balance": "1", "nonce": "1048576", "builtin": { "name": "ripemd160", "pricing": { "linear": { "base": 600, "word": 120 } } } },
         "0000000000000000000000000000000000000004": { "balance": "1", "nonce": "1048576", "builtin": { "name": "identity", "pricing": { "linear": { "base": 15, "word": 3 } } } },
-        "$author": { "balance": "1606938044258990275541962092341162602522202993782792835301376", "nonce": "1048576" }
+        "$faucet": { "balance": "1606938044258990275541962092341162602522202993782792835301376", "nonce": "1048576" }
     }
 }""")
 
-def write_chain_file(version, fn, author, difficulty):
+def write_chain_file(version, fn, faucet, difficulty):
 
-    if author.startswith('0x'):
-        author = author[2:]
+    if faucet.startswith('0x'):
+        faucet = faucet[2:]
 
     if isinstance(difficulty, int):
         difficulty = hex(difficulty)
@@ -73,14 +73,15 @@ def write_chain_file(version, fn, author, difficulty):
             difficulty = "0x{}".format(difficulty)
 
     with open(fn, 'w') as f:
-        f.write(chaintemplate.substitute(author=author, difficulty=difficulty))
+        f.write(chaintemplate.substitute(faucet=faucet, difficulty=difficulty))
 
 class ParityServer(Database):
 
     DEFAULT_SETTINGS = dict(auto_start=2,
                             base_dir=None,
                             parity_server=None,
-                            author=FAUCET_ADDRESS,
+                            author="0x0102030405060708090001020304050607080900",
+                            faucet=FAUCET_ADDRESS,
                             port=None,
                             rpcport=None,
                             bootnodes=None,
@@ -110,6 +111,8 @@ class ParityServer(Database):
 
         self.version = v
         self.chainfile = os.path.join(self.base_dir, 'chain.json')
+        self.faucet = self.settings.get('faucet')
+
         self.author = self.settings.get('author')
 
         self.difficulty = self.settings.get('difficulty')
@@ -138,7 +141,7 @@ class ParityServer(Database):
         self.public_key = "{:0>128}".format(binascii.b2a_hex(bitcoin.privtopub(binascii.a2b_hex(self.settings['node_key']))[1:]).decode('ascii'))
 
         # write chain file
-        write_chain_file(self.version, self.chainfile, self.author, self.difficulty)
+        write_chain_file(self.version, self.chainfile, self.faucet, self.difficulty)
 
     def get_server_commandline(self):
         if self.author.startswith("0x"):
