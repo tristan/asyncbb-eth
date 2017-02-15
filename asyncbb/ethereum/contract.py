@@ -2,18 +2,38 @@ import asyncio
 import subprocess
 import os
 import rlp
+import json
 from tornado.escape import json_decode
 from ethutils import data_decoder, data_encoder, private_key_to_address
 from ethereum.abi import ContractTranslator
 from ethereum.transactions import Transaction
 from asyncbb.ethereum.client import JsonRPCClient
 
+def fix_address_decoding(decoded, types):
+    """ethereum library result decoding doesn't add 0x to addresses
+    this parses the decoded results and adds 0x to any address types"""
+    rval = []
+    for val, type in zip(decoded, types):
+        if type == 'address':
+            rval.append('0x{}'.format(val.decode('ascii')))
+        elif type == 'address[]':
+            rval.append(['0x{}'.format(v.decode('ascii')) for v in val])
+        else:
+            rval.append(val)
+    return rval
+
 class ContractMethod:
 
-    def __init__(self, name, contract, *, from_key=None):
+    def __init__(self, name, contract, *, from_key=None, constant=None):
         self.name = name
         self.contract = contract
-        self.is_constant = self.contract.translator.function_data[name]['is_constant']
+        # TODO: forcing const seems to do nothing, since eth_call
+        # will just return a tx_hash (on parity at least)
+        if constant is None:
+            self.is_constant = self.contract.translator.function_data[name]['is_constant']
+        else:
+            # force constantness of this function
+            self.is_constant = constant
         if from_key:
             if isinstance(from_key, str):
                 self.from_key = data_decoder(from_key)
@@ -24,9 +44,9 @@ class ContractMethod:
             self.from_address = None
 
     def set_sender(self, key):
-        return ContractMethod(self.name, self.contract, from_key=key)
+        return self.__class__(self.name, self.contract, from_key=key, constant=self.is_constant)
 
-    async def __call__(self, *args):
+    async def __call__(self, *args, startgas=None, gasprice=20000000000, value=0):
 
         # TODO: figure out if we can validate args
 
@@ -37,11 +57,19 @@ class ContractMethod:
         ethclient = JsonRPCClient(ethurl)
 
         data = self.contract.translator.encode_function_call(self.name, args)
+
         # TODO: figure out if there's a better way to tell if the function needs to be called via sendTransaction
         if self.is_constant:
             result = await ethclient.eth_call(from_address=self.from_address or '', to_address=self.contract.address,
                                               data=data)
-            return self.contract.translator.decode_function_result(self.name, data_decoder(result))
+            decoded = self.contract.translator.decode_function_result(self.name, data_decoder(result))
+            # make sure addresses are encoded as expected
+            decoded = fix_address_decoding(decoded, self.contract.translator.function_data[self.name]['decode_types'])
+            # return the single value if there is only a single return value
+            if len(decoded) == 1:
+                return decoded[0]
+            return decoded
+
         else:
             if self.from_address is None:
                 raise Exception("Cannot call non-constant function without a sender")
@@ -49,10 +77,9 @@ class ContractMethod:
             nonce = await ethclient.eth_getTransactionCount(self.from_address)
             balance = await ethclient.eth_getBalance(self.from_address)
 
-            gasprice = 20000000000
-            value = 0
-
-            startgas = await ethclient.eth_estimateGas(self.from_address, self.contract.address, data=data, nonce=nonce, value=0, gasprice=gasprice)
+            _startgas = await ethclient.eth_estimateGas(self.from_address, self.contract.address, data=data, nonce=nonce, value=0, gasprice=gasprice)
+            if startgas is None:
+                startgas = _startgas
             if startgas == 50000000:
                 # TODO: this is not going to always be the case!
                 raise Exception("Unable to estimate gas cost, possibly something wrong with the transaction arguments")
@@ -76,19 +103,26 @@ class ContractMethod:
                 if resp is None or resp['blockNumber'] is None:
                     await asyncio.sleep(0.1)
                 else:
+                    # print("=========================")
+                    # print(resp)
+                    # receipt = await ethclient.eth_getTransactionReceipt(tx_hash)
+                    # print("GAS for {}: Provided: {}, Estimated: {}, Used: {}".format(self.name, startgas, _startgas, int(receipt['gasUsed'][2:], 16)))
+                    # print("Estimated gas: {}".format(_startgas))
+                    # print("=========================")
                     break
 
             # TODO: is it possible for non-const functions to have return types?
-            return None
+            return tx_hash
 
 
 class Contract:
 
-    def __init__(self, *, abi, code, address, translator=None):
+    def __init__(self, *, abi, address, translator=None, log_filter_id=None):
         self.abi = abi
         self.valid_funcs = [part['name'] for part in abi if part['type'] == 'function']
         self.translator = translator or ContractTranslator(abi)
         self.address = address
+        self.log_filter_id = log_filter_id
 
     def __getattr__(self, name):
 
@@ -98,41 +132,72 @@ class Contract:
         raise AttributeError("'Contract' object has no attribute '{}'".format(name))
 
     @classmethod
-    async def from_source_code(cls, sourcecode, contract_name, constructor_data=None, *, address=None, deployer_private_key=None):
+    async def from_source_code(cls, sourcecode, contract_name, constructor_data=None,
+                               *, address=None, deployer_private_key=None,
+                               libraries=None, optimize=False, deploy=True):
 
-        ethurl = os.environ.get('ETHEREUM_NODE_URL')
-        if not ethurl:
-            raise Exception("requires 'ETHEREUM_NODE_URL' environment variable to be set")
+        if deploy:
+            ethurl = os.environ.get('ETHEREUM_NODE_URL')
+            if not ethurl:
+                raise Exception("requires 'ETHEREUM_NODE_URL' environment variable to be set")
 
-        if address is None and deployer_private_key is None:
-            raise TypeError("requires either address or deployer_private_key")
-        if address is None and not isinstance(constructor_data, list):
-            raise TypeError("must supply constructor_data as a list (hint: use [] if args should be empty)")
+            if address is None and deployer_private_key is None:
+                raise TypeError("requires either address or deployer_private_key")
+            if address is None and not isinstance(constructor_data, (list, type(None))):
+                raise TypeError("must supply constructor_data as a list (hint: use [] if args should be empty)")
 
         args = ['solc', '--combined-json', 'bin,abi', '--add-std']
-        process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if libraries:
+            args.extend(['--libraries', ','.join(['{}:{}'.format(*library) for library in libraries])])
+        if optimize:
+            args.append('--optimize')
+        # check if sourcecode is actually a filename
+        if os.path.exists(sourcecode):
+            filename = os.path.basename(sourcecode)
+            cwd = os.path.dirname(sourcecode)
+            args.append(filename)
+            sourcecode = None
+        else:
+            filename = '<stdin>'
+            cwd = None
+        process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
         output, stderrdata = process.communicate(input=sourcecode)
-        output = json_decode(output)
+        try:
+            output = json_decode(output)
+        except json.JSONDecodeError:
+            raise Exception("Failed to compile source: {}".format(stderrdata))
 
-        contract = output['contracts']['<stdin>:{}'.format(contract_name)]
+        contract = output['contracts']['{}:{}'.format(filename, contract_name)]
         abi = json_decode(contract['abi'])
+
+        # deploy contract
+        translator = ContractTranslator(abi)
+
+        if not deploy:
+            return Contract(abi=abi,
+                            address=address,
+                            translator=translator)
 
         ethclient = JsonRPCClient(ethurl)
 
         if address is not None:
             # verify there is code at the given address
-            code = await ethclient.eth_getCode(address)
-            if code == "0x":
+            for i in range(10):
+                code = await ethclient.eth_getCode(address)
+                if code == "0x":
+                    await asyncio.sleep(1)
+                    continue
+                break
+            else:
                 raise Exception("No code found at given address")
             return Contract(abi=abi,
-                            code=data_decoder(code),
-                            address=address)
+                            address=address,
+                            translator=translator)
 
-        # deploy contract
-        translator = ContractTranslator(abi)
         bytecode = data_decoder(contract['bin'])
-        constructor_call = translator.encode_constructor_arguments(constructor_data)
-        bytecode += constructor_call
+        if constructor_data is not None:
+            constructor_call = translator.encode_constructor_arguments(constructor_data)
+            bytecode += constructor_call
 
         if isinstance(deployer_private_key, str):
             deployer_private_key = data_decoder(deployer_private_key)
@@ -152,9 +217,10 @@ class Contract:
         tx.sign(deployer_private_key)
 
         tx_encoded = data_encoder(rlp.encode(tx, Transaction))
-        tx_hash = await ethclient.eth_sendRawTransaction(tx_encoded)
 
         contract_address = data_encoder(tx.creates)
+
+        tx_hash = await ethclient.eth_sendRawTransaction(tx_encoded)
 
         # wait for the contract to be deployed
         while True:
@@ -167,4 +233,19 @@ class Contract:
                     raise Exception("Failed to deploy contract: resulting address '{}' has no code".format(contract_address))
                 break
 
-        return Contract(abi=abi, code=code, address=contract_address, translator=translator)
+        return Contract(abi=abi, address=contract_address, translator=translator)
+
+class BoundContract(Contract):
+    """A Contract that bound to a specific sender.
+    removes the need to call set_sender manually for each transaction"""
+
+    def __init__(self, *, sender, **kwargs):
+        self.sender = sender
+        super().__init__(**kwargs)
+
+    def __getattr__(self, name):
+
+        attr = super().__getattr__(name)
+        if self.sender:
+            return attr.set_sender(self.sender)
+        return attr
