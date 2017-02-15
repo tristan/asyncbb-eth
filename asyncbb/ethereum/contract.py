@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import subprocess
 import os
 import rlp
@@ -133,8 +134,8 @@ class Contract:
 
     @classmethod
     async def from_source_code(cls, sourcecode, contract_name, constructor_data=None,
-                               *, address=None, deployer_private_key=None,
-                               libraries=None, optimize=False, deploy=True):
+                               *, address=None, deployer_private_key=None, import_mappings=None,
+                               libraries=None, optimize=False, deploy=True, cwd=None):
 
         if deploy:
             ethurl = os.environ.get('ETHEREUM_NODE_URL')
@@ -151,23 +152,34 @@ class Contract:
             args.extend(['--libraries', ','.join(['{}:{}'.format(*library) for library in libraries])])
         if optimize:
             args.append('--optimize')
+        if import_mappings:
+            args.extend(["{}={}".format(path, mapping) for path, mapping in import_mappings])
         # check if sourcecode is actually a filename
-        if os.path.exists(sourcecode):
-            filename = os.path.basename(sourcecode)
-            cwd = os.path.dirname(sourcecode)
+        if cwd:
+            filename = os.path.join(cwd, sourcecode)
+        else:
+            filename = sourcecode
+        if os.path.exists(filename):
             args.append(filename)
             sourcecode = None
         else:
             filename = '<stdin>'
-            cwd = None
         process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
         output, stderrdata = process.communicate(input=sourcecode)
         try:
             output = json_decode(output)
         except json.JSONDecodeError:
-            raise Exception("Failed to compile source: {}".format(stderrdata))
+            if output and stderrdata:
+                output += b'\n' + stderrdata
+            elif stderrdata:
+                output = stderrdata
+            raise Exception("Failed to compile source: {}\n{}\n{}".format(filename, ' '.join(args), output.decode('utf-8')))
 
-        contract = output['contracts']['{}:{}'.format(filename, contract_name)]
+        try:
+            contract = output['contracts']['{}:{}'.format(filename, contract_name)]
+        except KeyError:
+            print(output)
+            raise
         abi = json_decode(contract['abi'])
 
         # deploy contract
@@ -194,7 +206,12 @@ class Contract:
                             address=address,
                             translator=translator)
 
-        bytecode = data_decoder(contract['bin'])
+        try:
+            bytecode = data_decoder(contract['bin'])
+        except binascii.Error:
+            print(contract['bin'])
+            raise
+
         if constructor_data is not None:
             constructor_call = translator.encode_constructor_arguments(constructor_data)
             bytecode += constructor_call
