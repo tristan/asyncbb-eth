@@ -4,6 +4,7 @@ import bitcoin
 import os
 import tornado.httpclient
 import tornado.escape
+import signal
 import subprocess
 import re
 
@@ -189,6 +190,11 @@ class ParityServer(Database):
             return True
         except:
             return False
+
+    def pause(self):
+        """stops service, without calling the cleanup"""
+        self.terminate(signal.SIGTERM)
+
 
 class ParityServerFactory(DatabaseFactory):
     target_class = ParityServer
